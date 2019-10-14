@@ -26,6 +26,7 @@
 #include "starboard/shared/starboard/player/filter/video_render_algorithm.h"
 #include "starboard/shared/starboard/player/filter/video_render_algorithm_impl.h"
 #include "starboard/shared/starboard/player/filter/video_renderer_sink.h"
+#include "starboard/shared/opus/opus_audio_decoder.h"
 
 namespace starboard {
 namespace shared {
@@ -73,14 +74,29 @@ class PlayerComponentsImpl : public PlayerComponents {
     }
 #endif  // SB_API_VERSION >= 11
 #else
-    typedef ::starboard::shared::gstreamer::AudioDecoder AudioDecoderImpl;
 
-    scoped_ptr<AudioDecoderImpl> audio_decoder_impl(new AudioDecoderImpl(
-            audio_parameters.audio_codec, audio_parameters.audio_sample_info));
-    if (audio_decoder_impl && audio_decoder_impl->is_valid()) {
-      audio_decoder->reset(audio_decoder_impl.release());
-    } else {
-      audio_decoder->reset();
+    if (audio_parameters.audio_codec == kSbMediaAudioCodecOpus) {
+
+        auto decoder_creator = [](const SbMediaAudioSampleInfo& audio_sample_info,
+                                  SbDrmSystem drm_system) {
+          using OpusAudioDecoder = ::starboard::shared::opus::OpusAudioDecoder;
+          return scoped_ptr<AudioDecoder>(
+              new OpusAudioDecoder(audio_sample_info));
+        };
+        audio_decoder->reset(
+            new AdaptiveAudioDecoder(audio_parameters.audio_sample_info,
+                                     audio_parameters.drm_system, decoder_creator));
+    }
+    else {
+        typedef ::starboard::shared::gstreamer::AudioDecoder AudioDecoderImpl;
+
+        scoped_ptr<AudioDecoderImpl> audio_decoder_impl(new AudioDecoderImpl(
+                audio_parameters.audio_codec, audio_parameters.audio_sample_info));
+        if (audio_decoder_impl && audio_decoder_impl->is_valid()) {
+          audio_decoder->reset(audio_decoder_impl.release());
+        } else {
+          audio_decoder->reset();
+        }
     }
 #endif
     audio_renderer_sink->reset(new AudioRendererSinkImpl);

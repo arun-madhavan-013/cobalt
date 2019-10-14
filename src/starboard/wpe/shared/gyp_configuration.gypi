@@ -138,6 +138,7 @@
       '-lpthread',
       '-lrt',
       '-locdm',
+      '-lopus',
       '-lopenmaxil',
       '-lbcm_host',
       '-lvcos',
