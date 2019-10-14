@@ -5,6 +5,7 @@
 #include "starboard/common/scoped_ptr.h"
 #include <queue>
 
+#include "starboard/media.h"
 #include "starboard/thread.h"
 #include "gst/gst.h"
 #include "gst/app/gstappsrc.h"
@@ -14,6 +15,8 @@ namespace starboard {
 namespace wpe {
 namespace shared {
 namespace gstreamer {
+
+#define USE_PLAYBIN 1
 
 class VideoSample : public RefCountedThreadSafe<VideoSample> {
 
@@ -35,7 +38,7 @@ private:
 class VideoContext {
 
 public:
-    VideoContext();
+    VideoContext(SbMediaVideoCodec video_codec);
     ~VideoContext();
 
     void SetDecoder(void *video_decoder);
@@ -54,18 +57,26 @@ private:
     static gboolean ReadData(void *context);
     static GstFlowReturn NewSample(GstElement *sink, void *context);
 
+#ifdef USE_PLAYBIN
+    static void SourceSetup(
+            GstElement *pipeline, GstElement *source, void *context);
+#endif
+
     SbThread main_thread_;
     GMainLoop *loop;
 
     GstPipeline *pipeline;
     GstAppSrc *src;
-    GstElement *h264parse;
-    GstElement *omxh264dec;
+#ifndef USE_PLAYBIN
+    GstElement *capsfilter;
+    GstElement *decoder;
+    GstElement *parser;
     GstElement *queue;
+#endif
     GstElement *appsink;
-    GstPad *pad;
     guint sourceid;
     void *video_decoder;
+    SbMediaVideoCodec video_codec;
 
     std::queue<scoped_refptr<VideoSample> > video_samples_;
 };

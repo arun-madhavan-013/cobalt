@@ -11,10 +11,29 @@ namespace wpe {
 namespace shared {
 namespace gstreamer {
 
-VideoContext::VideoContext()
+VideoContext::VideoContext(SbMediaVideoCodec video_codec)
 :sourceid(0) {
     if (!gst_is_initialized())
         gst_init(NULL, NULL);
+
+    this->video_codec = video_codec;
+
+#ifdef USE_PLAYBIN
+
+    pipeline = (GstPipeline*)gst_parse_launch ("playbin uri=appsrc://", NULL);
+    g_signal_connect(pipeline, "source-setup", G_CALLBACK(SourceSetup), this);
+
+    GstBus *bus;
+    bus = gst_pipeline_get_bus(pipeline);
+    gst_bus_add_watch(bus, (GstBusFunc)BusCallback, this);
+    gst_object_unref(bus);
+
+    appsink = gst_element_factory_make("appsink", "vidappsink");
+    g_object_set(appsink, "emit-signals", TRUE, "sync", FALSE, NULL);
+    g_signal_connect(appsink, "new-sample", G_CALLBACK(NewSample), this);
+    g_object_set(pipeline, "video-sink", appsink, NULL);
+
+#else
 
     pipeline = (GstPipeline*)gst_pipeline_new("videopipeline");
 
@@ -24,21 +43,45 @@ VideoContext::VideoContext()
     gst_object_unref(bus);
 
     src = (GstAppSrc*)gst_element_factory_make("appsrc", "vidsrc");
-    appsink = gst_element_factory_make("appsink", "vidappsink");
     g_signal_connect(src, "need-data", G_CALLBACK(StartFeed), this);
     g_signal_connect(src, "enough-data", G_CALLBACK(StopFeed), this);
 
-    h264parse = gst_element_factory_make("h264parse", "vidh264parse");
-    omxh264dec = gst_element_factory_make("omxh264dec", "vidomxh264dec");
-    queue = gst_element_factory_make("queue", "vidqueue");
-
-    gst_bin_add_many(GST_BIN(pipeline),
-            (GstElement*)src, h264parse, omxh264dec, queue, appsink, NULL);
-    gst_element_link_many(
-            (GstElement*)src, h264parse, omxh264dec, queue, appsink, NULL);
-
+    appsink = gst_element_factory_make("appsink", "vidappsink");
     g_object_set(appsink, "emit-signals", TRUE, "sync", FALSE, NULL);
     g_signal_connect(appsink, "new-sample", G_CALLBACK(NewSample), this);
+
+    if (video_codec == kSbMediaVideoCodecH264) {
+
+        parser = gst_element_factory_make("h264parse", "vidparser");
+        decoder = gst_element_factory_make("omxh264dec", "viddecoder");
+        queue = gst_element_factory_make("queue", "vidqueue");
+
+        gst_bin_add_many(GST_BIN(pipeline), (GstElement*) src, parser, decoder,
+                queue, appsink, NULL);
+        gst_element_link_many((GstElement*) src, parser, decoder, queue,
+                appsink, NULL);
+    }
+    else if (video_codec == kSbMediaVideoCodecVp9) {
+
+        decoder = gst_element_factory_make("vp9dec", "viddecoder");
+        queue = gst_element_factory_make("queue", "vidqueue");
+
+        capsfilter = gst_element_factory_make("capsfilter", "vidcapsfilter");
+        GstCaps *caps = gst_caps_new_simple("video/x-vp9", "framerate",
+                GST_TYPE_FRACTION, 1000, 1, "pixel-aspect-ratio",
+                GST_TYPE_FRACTION, 1, 1, "width", G_TYPE_INT, 1920, "height",
+                G_TYPE_INT, 1080,
+                NULL);
+        g_object_set(capsfilter, "caps", caps, NULL);
+        gst_caps_unref(caps);
+
+        gst_bin_add_many(GST_BIN(pipeline), (GstElement*) src, capsfilter,
+                decoder, queue, appsink, NULL);
+        gst_element_link_many((GstElement*) src, capsfilter, decoder, queue,
+                appsink, NULL);
+    }
+
+#endif
 
     loop = g_main_loop_new(NULL, FALSE);
     main_thread_ =
@@ -60,6 +103,29 @@ VideoContext::~VideoContext() {
     }
     gst_object_unref(GST_OBJECT(pipeline));
 }
+
+#ifdef USE_PLAYBIN
+
+void VideoContext::SourceSetup(
+        GstElement *pipeline, GstElement *source, void *context) {
+
+    VideoContext *con = reinterpret_cast<VideoContext*>(context);
+    con->src = (GstAppSrc*)source;
+
+    if (con->video_codec == kSbMediaVideoCodecVp9) {
+
+        GstCaps *caps = gst_caps_new_simple("video/x-vp9", "framerate",
+                GST_TYPE_FRACTION, 1000, 1, "pixel-aspect-ratio",
+                GST_TYPE_FRACTION, 1, 1, "width", G_TYPE_INT, 1920, "height",
+                G_TYPE_INT, 1080,
+                NULL);
+        g_object_set(con->src, "caps", caps, NULL);
+    }
+    g_signal_connect(con->src, "need-data", G_CALLBACK(StartFeed), con);
+    g_signal_connect(con->src, "enough-data", G_CALLBACK(StopFeed), con);
+}
+
+#endif
 
 void VideoContext::SetDecoder(void *video_decoder) {
     this->video_decoder = video_decoder;
@@ -88,6 +154,8 @@ gboolean VideoContext::BusCallback(GstBus *bus, GstMessage *message, gpointer *p
         GError *err;
         gst_message_parse_error(message, &err, &debug);
         g_print("Error %s\n", err->message);
+        gchar *name = (gchar *)GST_MESSAGE_SRC_NAME(message);
+        g_print("Name of src %s\n", name ? name : "nil");
         g_error_free(err);
         g_free(debug);
         g_main_loop_quit(con->loop);

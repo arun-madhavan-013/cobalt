@@ -6,6 +6,8 @@ namespace starboard {
 namespace shared {
 namespace ocdm {
 
+// #define USE_EXPLICIT_KEYSYSTEM 1
+
 std::string DrmSystemOcdm::key_system_str = "";
 
 DrmSystemOcdm::DrmSystemOcdm(void *context,
@@ -37,6 +39,17 @@ DrmSystemOcdm::~DrmSystemOcdm() {
 
 bool DrmSystemOcdm::IsKeySystemSupported(const char *key_system) {
 
+#ifdef USE_EXPLICIT_KEYSYSTEM
+    const char *key_system_arr[] = { "com.youtube.playready" };
+    for (auto index : key_system_arr) {
+        if (SbStringCompareAll(key_system, index) == 0) {
+            if (key_system_str.empty()) {
+                key_system_str = key_system;
+            }
+            return true;
+        }
+    }
+#else
     std::string empty_string;
     if (opencdm_is_type_supported(key_system, empty_string.c_str()) == 0) {
         if (key_system_str.empty()) {
@@ -44,6 +57,7 @@ bool DrmSystemOcdm::IsKeySystemSupported(const char *key_system) {
         }
         return true;
     }
+#endif
     return false;
 }
 
@@ -60,7 +74,7 @@ void DrmSystemOcdm::GenerateSessionUpdateRequest(int ticket, const char *type,
 
     pre_session_ticket_ = ticket;
     opencdm_construct_session(ocdm_system_,
-            (LicenseType) 0, "drmheader", (const uint8_t*) initialization_data,
+            (LicenseType) 0, type, (const uint8_t*) initialization_data,
             initialization_data_size,
             NULL, 0, &session_callbacks_, this, &session);
 

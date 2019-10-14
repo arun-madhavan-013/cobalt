@@ -11,6 +11,8 @@ namespace starboard {
 namespace shared {
 namespace gstreamer {
 
+#define USE_PLAYBIN 1
+
 class AudioContext {
 
 public:
@@ -28,19 +30,28 @@ private:
     static void* MainThread (void* context);
     static void StartFeed (GstElement *pipeline, guint size, void *context);
     static void StopFeed (GstElement *pipeline, void *context);
+#ifndef USE_PLAYBIN
     static void OnPadAdded (GstElement *element, GstPad *pad, void *context);
+#endif
     static gboolean ReadData (void *context);
     static GstFlowReturn NewSample (GstElement *sink, void *context);
+
+#ifdef USE_PLAYBIN
+    static void SourceSetup(
+            GstElement *pipeline, GstElement *source, void *context);
+#endif
 
     SbThread main_thread_;
     GMainLoop *loop;
 
     GstPipeline *pipeline;
     GstAppSrc *src;
+#ifndef USE_PLAYBIN
     GstElement *decoder;
     GstElement *convert;
     GstElement *resample;
     GstElement *capsfilter;
+#endif
     GstElement *appsink;
     guint sourceid;
     void *audio_decoder;

@@ -12,6 +12,23 @@ AudioContext::AudioContext(int32_t number_of_channels)
     if (!gst_is_initialized())
         gst_init(NULL, NULL);
 
+#ifdef USE_PLAYBIN
+
+    pipeline = (GstPipeline*)gst_parse_launch ("playbin uri=appsrc://", NULL);
+    g_signal_connect(pipeline, "source-setup", G_CALLBACK(SourceSetup), this);
+
+    GstBus *bus;
+    bus = gst_pipeline_get_bus(pipeline);
+    gst_bus_add_watch(bus, (GstBusFunc)BusCallback, this);
+    gst_object_unref(bus);
+
+    appsink = gst_element_factory_make("appsink", "audappsink");
+    g_object_set(appsink, "emit-signals", TRUE, "sync", FALSE, NULL);
+    g_signal_connect(appsink, "new-sample", G_CALLBACK(NewSample), this);
+    g_object_set(pipeline, "audio-sink", appsink, NULL);
+
+#else
+
     pipeline = (GstPipeline*)gst_pipeline_new("audiopipeline");
 
     GstBus *bus;
@@ -44,6 +61,8 @@ AudioContext::AudioContext(int32_t number_of_channels)
     g_object_set(appsink, "emit-signals", TRUE, "sync", FALSE, NULL);
     g_signal_connect(appsink, "new-sample", G_CALLBACK (NewSample), this);
 
+#endif
+
     loop = g_main_loop_new(NULL, FALSE);
     main_thread_ =
             SbThreadCreate(0, kSbThreadPriorityHigh, kSbThreadNoAffinity, true,
@@ -60,6 +79,20 @@ AudioContext::~AudioContext() {
     }
     gst_object_unref(GST_OBJECT(pipeline));
 }
+
+#ifdef USE_PLAYBIN
+
+void AudioContext::SourceSetup(
+        GstElement *pipeline, GstElement *source, void *context) {
+
+    AudioContext *con = reinterpret_cast<AudioContext*>(context);
+    con->src = (GstAppSrc*)source;
+
+    g_signal_connect(con->src, "need-data", G_CALLBACK(StartFeed), con);
+    g_signal_connect(con->src, "enough-data", G_CALLBACK(StopFeed), con);
+}
+
+#endif
 
 void AudioContext::SetDecoder(void *audio_decoder) {
     this->audio_decoder = audio_decoder;
@@ -142,6 +175,8 @@ void AudioContext::StopFeed (GstElement *pipeline, void *context) {
     }
 }
 
+#ifndef USE_PLAYBIN
+
 void AudioContext::OnPadAdded(
         GstElement *element, GstPad *pad, void *context) {
     AudioContext *con = reinterpret_cast<AudioContext*>(context);
@@ -151,6 +186,8 @@ void AudioContext::OnPadAdded(
     gst_pad_link(pad, convertpad);
     g_object_unref(convertpad);
 }
+
+#endif
 
 gboolean AudioContext::ReadData (void *context) {
     AudioContext *con = reinterpret_cast<AudioContext*>(context);

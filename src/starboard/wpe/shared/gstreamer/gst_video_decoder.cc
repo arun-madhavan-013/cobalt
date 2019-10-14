@@ -22,7 +22,7 @@ VideoDecoder::VideoDecoder(SbMediaVideoCodec video_codec)
     update_job_ = std::bind(&VideoDecoder::Update, this);
     update_job_token_ = Schedule(update_job_, kUpdateInterval);
 
-    VideoContext *con = new VideoContext();
+    VideoContext *con = new VideoContext(video_codec);
     video_context = reinterpret_cast<void*>(con);
     con->SetDecoder(this);
     con->SetPlay();

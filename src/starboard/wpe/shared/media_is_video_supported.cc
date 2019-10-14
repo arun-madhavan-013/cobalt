@@ -18,6 +18,8 @@
 #include "starboard/media.h"
 #include "starboard/shared/starboard/media/media_util.h"
 
+// #define USE_VP9 1
+
 SB_EXPORT bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
                                        int profile,
                                        int level,
@@ -42,7 +44,19 @@ SB_EXPORT bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
     // There currently is no Raspberry Pi 360 video implementation.
     return false;
   }
+
+#ifdef USE_VP9
+
+  return (video_codec == kSbMediaVideoCodecH264 ||
+         (video_codec == kSbMediaVideoCodecVp9)) &&
+         frame_width <= 640 && frame_height <= 360 &&
+         bitrate <= SB_MEDIA_MAX_VIDEO_BITRATE_IN_BITS_PER_SECOND && fps <= 30;
+#else
+
   return video_codec == kSbMediaVideoCodecH264 && frame_width <= 1280 &&
          frame_height <= 720 &&
          bitrate <= SB_MEDIA_MAX_VIDEO_BITRATE_IN_BITS_PER_SECOND && fps <= 30;
+
+#endif
+
 }
