@@ -8,9 +8,7 @@ namespace ocdm {
 
 // #define USE_EXPLICIT_KEYSYSTEM 1
 
-std::string DrmSystemOcdm::key_system_str = "";
-
-DrmSystemOcdm::DrmSystemOcdm(void *context,
+DrmSystemOcdm::DrmSystemOcdm(const char *key_system, void *context,
         SbDrmSessionUpdateRequestFunc session_update_request_callback,
         SbDrmSessionUpdatedFunc session_updated_callback,
         SbDrmSessionKeyStatusesChangedFunc key_statuses_changed_callback,
@@ -22,9 +20,12 @@ DrmSystemOcdm::DrmSystemOcdm(void *context,
                 session_updated_callback), key_statuses_changed_callback_(
                 key_statuses_changed_callback), server_certificate_updated_callback_(
                 server_certificate_updated_callback), session_closed_callback_(
-                session_closed_callback) {
+                session_closed_callback), changeIVByteOrder(false) {
 
-    ocdm_system_ = opencdm_create_system(key_system_str.c_str());
+    ocdm_system_ = opencdm_create_system(key_system);
+    if (strstr(key_system, "playready")) {
+        changeIVByteOrder = true;
+    }
 }
 
 DrmSystemOcdm::~DrmSystemOcdm() {
@@ -43,18 +44,12 @@ bool DrmSystemOcdm::IsKeySystemSupported(const char *key_system) {
     const char *key_system_arr[] = { "com.youtube.playready" };
     for (auto index : key_system_arr) {
         if (SbStringCompareAll(key_system, index) == 0) {
-            if (key_system_str.empty()) {
-                key_system_str = key_system;
-            }
             return true;
         }
     }
 #else
     std::string empty_string;
     if (opencdm_is_type_supported(key_system, empty_string.c_str()) == 0) {
-        if (key_system_str.empty()) {
-            key_system_str = key_system;
-        }
         return true;
     }
 #endif
@@ -72,7 +67,7 @@ void DrmSystemOcdm::GenerateSessionUpdateRequest(int ticket, const char *type,
     session_callbacks_.keys_updated_callback = OCDMKeyUpdated;
     session_callbacks_.error_message_callback = OCDMMessage;
 
-    pre_session_ticket_ = ticket;
+    SetTicket(nullptr, ticket);
     opencdm_construct_session(ocdm_system_,
             (LicenseType) 0, type, (const uint8_t*) initialization_data,
             initialization_data_size,
@@ -123,7 +118,8 @@ void DrmSystemOcdm::OCDMProcessChallengeInternal(OpenCDMSession *session,
 
     if (message_type == kSbDrmSessionRequestTypeLicenseRequest) {
 
-        session_update_request_callback_(this, context_, pre_session_ticket_,
+        int ticket = GetAndResetTicket(nullptr);
+        session_update_request_callback_(this, context_, ticket,
                 kSbDrmStatusSuccess, (SbDrmSessionRequestType) message_type, "",
                 session_id.c_str(), static_cast<int>(session_id.size()),
                 challenge + offset, challenge_length - offset, url);
@@ -196,11 +192,14 @@ void DrmSystemOcdm::OCDMMessageInternal(struct OpenCDMSession *session,
 void DrmSystemOcdm::UpdateServerCertificate(int ticket, const void *certificate,
         int certificate_size) {
 
-    opencdm_system_set_server_certificate(ocdm_system_,
-            (const uint8_t*) certificate, certificate_size);
-
-    server_certificate_updated_callback_(this, context_, ticket,
-            kSbDrmStatusSuccess, "");
+    if (opencdm_system_set_server_certificate(ocdm_system_,
+            (const uint8_t*) certificate, certificate_size) == 0) {
+        server_certificate_updated_callback_(this, context_, ticket,
+                kSbDrmStatusSuccess, "");
+    } else {
+        server_certificate_updated_callback_(this, context_, ticket,
+                kSbDrmStatusUnknownError, "");
+    }
 }
 
 void IncrementIv(uint8_t *iv, size_t block_count) {
@@ -246,16 +245,6 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemOcdm::Decrypt(InputBuffer *buffer) {
     uint8_t *iv = initialization_vector.data();
     uint32_t iv_length = initialization_vector.size();
 
-    // Note: This is a work-around for Widevine.It needs to be removed as
-    // OCDM should be DRM agnostic
-    if (key_system_str.compare("com.widevine.alpha") == 0) {
-        SWAP(iv[0], iv[7]);
-        SWAP(iv[1], iv[6]);
-        SWAP(iv[2], iv[5]);
-        SWAP(iv[3], iv[4]);
-    }
-
-    uint64_t block_offset = 0;
     uint64_t byte_offset = 0;
     size_t block_counter = 0;
     size_t encrypted_offset = 0;
@@ -272,10 +261,14 @@ SbDrmSystemPrivate::DecryptStatus DrmSystemOcdm::Decrypt(InputBuffer *buffer) {
         if (subsample.encrypted_byte_count) {
 
             OcdmCounterContext counter_context = { 0 };
-            NETWORKBYTES_TO_QWORD(counter_context.initialization_vector_, iv,
-                    0);
-            NETWORKBYTES_TO_QWORD(block_offset, iv, 8);
-            counter_context.block_offset_ = block_offset;
+            if (changeIVByteOrder) {
+                NETWORKBYTES_TO_QWORD(counter_context.initialization_vector_,
+                        iv, 0);
+                NETWORKBYTES_TO_QWORD(counter_context.block_offset_, iv, 8);
+            } else {
+                counter_context.initialization_vector_ = *((uint64_t*) (iv));
+                counter_context.block_offset_ = *((uint64_t*) (iv + 8));
+            }
             counter_context.byte_offset_ = byte_offset;
             const uint8_t *piv = (const uint8_t*) &counter_context;
 

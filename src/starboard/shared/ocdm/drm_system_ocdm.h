@@ -34,7 +34,7 @@ struct OcdmCounterContext {
 class DrmSystemOcdm: public SbDrmSystemPrivate {
 
 public:
-    DrmSystemOcdm(void *context,
+    DrmSystemOcdm(const char *key_system, void *context,
             SbDrmSessionUpdateRequestFunc update_request_callback,
             SbDrmSessionUpdatedFunc session_updated_callback,
             SbDrmSessionKeyStatusesChangedFunc key_statuses_changed_callback,
@@ -89,12 +89,10 @@ private:
     struct OpenCDMSession* SessionIdToSession(const void *session_id,
             int session_id_size);
 
-    static std::string key_system_str;
-
     void *const context_;
-    int pre_session_ticket_;
     std::map<OpenCDMSession*, int> session_to_ticket_;
     std::list<OpenCDMSession *> session_list;
+    bool changeIVByteOrder;
 
     const SbDrmSessionUpdateRequestFunc session_update_request_callback_;
     const SbDrmSessionUpdatedFunc session_updated_callback_;

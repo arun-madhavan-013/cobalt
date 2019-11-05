@@ -19,6 +19,7 @@
 #include "starboard/shared/starboard/media/media_util.h"
 
 // #define USE_VP9 1
+// #define USE_VP9_LOWRES 1
 
 SB_EXPORT bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
                                        int profile,
@@ -47,10 +48,20 @@ SB_EXPORT bool SbMediaIsVideoSupported(SbMediaVideoCodec video_codec,
 
 #ifdef USE_VP9
 
+#ifdef USE_VP9_LOWRES
+
   return (video_codec == kSbMediaVideoCodecH264 ||
-         (video_codec == kSbMediaVideoCodecVp9)) &&
-         frame_width <= 640 && frame_height <= 360 &&
-         bitrate <= SB_MEDIA_MAX_VIDEO_BITRATE_IN_BITS_PER_SECOND && fps <= 30;
+          (video_codec == kSbMediaVideoCodecVp9)) &&
+          frame_width <= 640 && frame_height <= 360 &&
+          bitrate <= SB_MEDIA_MAX_VIDEO_BITRATE_IN_BITS_PER_SECOND && fps <= 30;
+#else
+
+  return (video_codec == kSbMediaVideoCodecH264 ||
+          (video_codec == kSbMediaVideoCodecVp9)) &&
+          frame_width <= 1920 && frame_height <= 1080 &&
+          bitrate <= SB_MEDIA_MAX_VIDEO_BITRATE_IN_BITS_PER_SECOND && fps <= 60;
+#endif
+
 #else
 
   return video_codec == kSbMediaVideoCodecH264 && frame_width <= 1280 &&

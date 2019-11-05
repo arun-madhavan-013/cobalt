@@ -20,7 +20,7 @@ SbDrmSystem SbDrmCreateSystem(const char *key_system, void *context,
         SB_DLOG(WARNING) << "Invalid key system " << key_system;
         return kSbDrmSystemInvalid;
     }
-    return new DrmSystemOcdm(context, update_request_callback,
+    return new DrmSystemOcdm(key_system, context, update_request_callback,
             session_updated_callback, key_statuses_changed_callback,
             server_certificate_updated_callback, session_closed_callback,
             "Linux", "Linux");
