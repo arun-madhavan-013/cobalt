@@ -15,8 +15,6 @@
   'variables': {
     'has_ocdm': '<!(echo $COBALT_HAS_OCDM)',
     'common_libs': [
-      '-lEGL',
-      '-lGLESv2',
       '-lWPEFrameworkCore',
       '-lWPEFrameworkDefinitions',
       '-lWPEFrameworkTracing',
